@@ -1,0 +1,194 @@
+#! python3
+# assembler.py - Hack computer assembler
+import logging, re
+from pathlib import Path
+
+# Initialize the symbol table
+symbols = ['SP',0,'LCL',1,'ARG',2,'THIS',3,'THAT',4,'R0',0,'R1',1,'R2',2,'R3',3,'R4',4,'R5',5,'R6',6,'R7',7,'R8',8,'R9',9,'R10',10,'R11',11,'R12',12,'R13',13,'R14',14,'R15',15,'SCREEN',16384,'KBD',24576]
+
+pseudocommand = re.compile(r'\(.*\)')
+registerreg = re.compile(r'(AMD|AD|AM|A|MD|D|M)=')
+# First pass
+ROMAddress= 0
+code = open(Path('') / '')
+lines=code.readlines()
+for line in lines:
+   if '@' in line or '=' in line or ';' in line and '//' not in line[0:2]:
+       ROMAddress += 1
+   elif pseudocommand.search(line) != None and '//' not in line[0:2]:
+       symbols.append(pseudocommand.search(line).group()[1:-1])
+       symbols.append(ROMAddress)
+   else:
+       continue
+# Second pass
+xxxreg = re.compile(r'@\S+')
+RAMAddress = 16
+machinecode = []
+Areg = re.compile(r'=A+')
+Mreg = re.compile(r'=.*M.*')
+linecode = []
+
+registers = {'AMD=':'111000',
+            'AD=':'110000',
+            'AM=':'101000',
+            'A=':'100000',
+            'MD=':'011000',
+            'D=':'010000',
+            'M=':'001000'}
+def register(line):
+   if registerreg.search(line) != None:
+      linecode.append(registers[registerreg.search(line).group()])
+   elif '=' not in line:
+       linecode.append('000000')
+   machinecode.append(''.join(linecode[0:]))
+   linecode=[]
+
+def assembler2(stuff):
+   linecode = []
+   global RAMAddress
+   for i in range(len(symbols)):
+       if xxxreg.search(line) != None and xxxreg.search(line).group()[1:] not in symbols:
+           if xxxreg.search(line).group()[1:].isdigit():
+               machinecode.append(format(int(xxxreg.search(line).group()[1:]),'b'))
+               break
+           else:
+               symbols.append(xxxreg.search(line).group()[1:])
+               symbols.append(RAMAddress)
+               machinecode.append(format(RAMAddress, 'b'))
+               RAMAddress += 1
+               break
+       elif xxxreg.search(line) != None and type(symbols[i]) is not int:
+           if xxxreg.search(line).group()[1:] in symbols[i]:
+               count = symbols[i + 1]
+               machinecode.append(format(count, 'b'))
+                   break
+           else:
+               continue
+       elif Areg.search(line) != None or '=0' in line or '=1' in line or '=-1' in line or '=D' in line or ';' in line:
+           linecode.append('1110')
+           if '0;JMP' in line:
+               linecode=[]
+               machinecode.append('1110101010000111')
+               break
+           elif 'D;JGT' in line:
+               linecode=[]
+               machinecode.append('1110001100000001')
+               break
+           elif 'D;JEQ' in line:
+               linecode=[]
+               machinecode.append('1110001100000010')
+               break
+           elif 'D;JGE' in line:
+               linecode=[]
+               machinecode.append('1110001100000011')
+               break
+           elif 'D;JLT' in line:
+               linecode=[]
+               machinecode.append('1110001100000100')
+               break
+           elif 'D;JNE' in line:
+               linecode=[]
+               machinecode.append('1110001100000101')
+               break
+           elif 'D;JLE' in line:
+               linecode=[]
+               machinecode.append('1110001100000110')
+               break
+           elif '=D|M' in line:
+               linecode= []
+               linecode.append('1111010101')
+               register(line)
+           elif '=D&M' in line:
+               linecode = []
+               linecode.append('1111000000')
+               register(line)
+           elif 'D+M' in line:
+               linecode = []
+               linecode.append('1111000010')
+               register(line)
+           elif '=0' in line:
+               linecode.append('101010')
+               register(line)
+           elif '=1' in line:
+               linecode.append('111111')
+               register(line)
+           elif '=-1' in line:
+               linecode.append('111010')
+               register(line)
+           elif '=D' in line and 'D+1' not in line and 'D-1' not in line and 'D+M' not in line and '=D+A' not in line and '=D&M' not in line and '=D|M' not in line:
+               linecode.append('001100')
+               register(line)
+           elif '=A' in line and '=A-1' not in line and '=A+1' not in line:
+               linecode.append('110000')
+               register(line)
+           elif '=D+1' in line:
+               linecode.append('011111')
+               register(line)
+           elif 'A+1' in line:
+               linecode.append('110111')
+               register(line)
+           elif 'D-1' in line:
+               linecode.append('001110')
+               register(line)
+           elif 'A-1' in line:
+               linecode.append('110010')
+               register(line)
+           elif 'D+A' in line:
+               linecode.append('000010')
+               register(line)
+           elif 'D-A' in line:
+               linecode.append('010011')
+               register(line)
+           elif 'A-D' in line:
+               linecode.append('000111')
+               register(line)
+       elif Mreg.search(line) != None:
+           linecode.append('1111')
+           if '=!M' in line:
+               linecode.append('110001')
+               register(line)
+           elif '=0' in line:
+               linecode.append('101010')
+               register(line)
+           elif '=1' in line:
+               linecode.append('111111')
+               register(line)
+           elif '=-1' in line:
+               linecode.append('111010')
+               register(line)
+           elif '=D' in line and '=D+1' not in line and '=D-1' not in line and '=D+M' not in line and '=D+A' not in line and '=D&M' not in line and '=D|M' not in line:
+               linecode.append('001100')
+               register(line)
+           elif '=M' in line and '=M-1' not in line and '=M-D' not in line and '=M+1' not in line:
+               linecode.append('110000')
+               register(line)
+           elif '=D+1' in line:
+               linecode.append('011111')
+               register(line)
+           elif 'M+1' in line:
+               linecode.append('110111')
+               register(line)
+           elif 'D-1' in line:
+               linecode.append('001110')
+               register(line)
+           elif 'M-1' in line:
+               linecode.append('110010')
+               register(line)
+           elif 'D+M' in line:
+               linecode.append('000010')
+               register(line)
+           elif 'D-M' in line:
+               linecode.append('010011')
+               register(line)
+           elif 'M-D' in line:
+               linecode.append('000111')
+               register(line)
+
+for line in lines:
+   assembler2(line)
+writer = open('Pong1.hack', 'a')
+for line in machinecode:
+   if len(str(line)) == 16:
+       writer.write(str(line) + '\n')
+   elif len(str(line)) < 16:
+       writer.write(str(line).zfill(16)+'\n')

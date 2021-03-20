@@ -1,0 +1,671 @@
+#! python3
+# HackVirtualMachine.py - Converts vm files to asm
+
+import logging
+import sys
+import re
+import assembler
+import textwrap
+
+from pathlib import Path
+
+logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(levelname)s - %(message)s')
+logging.debug('Start of program')
+
+#PARSER:
+vmcode = open(Path(f'/Users/baylorstudent/Documents/') / 'StaticTest1.vm')
+hold = vmcode.readlines()
+cmnd = 0
+pshreg = re.compile(r'(push)\s(constant|local|argument|this|that|pointer|static|temp)\s(\d+)')
+popreg = re.compile(r'(pop)\s(constant|local|argument|this|that|pointer|static|temp)\s(\d+)')
+funcreg = re.compile(r'(function)\s(\S+)\s*(\S+)*')
+callreg = re.compile(r'(call)\s(\S+)\s*(\S+)*')
+labelreg = re.compile(r'(label)\s(.+)')
+cmntreg = re.compile(r'[^/]+')
+commandTypereg = re.compile(r'(sub|neg|eq|gt|lt|and|or|not|push|pop|label|goto|if|function|return|call)')
+classreg = re.compile(r'(Class)(\d+)(\.get|\.set)')
+
+def label(lbl):
+   counter = 0
+   #logging.debug(len(hold))
+   logging.debug(lbl)
+   for line in hold:
+       if lbl == line:
+           break
+       else:
+           counter += 1
+           continue
+   for _ in range(counter):
+       #logging.critical(counter)
+       if 'function' in hold[counter]:
+           return str(funcreg.search(hold[counter]).group(2))
+       else:
+           counter -= 1
+           continue
+gotoreg = re.compile(r'(goto|if-goto)\s(.+)')
+
+#CODE WRITER
+# STACK ARITHMETIC COMMANDS:
+def pushConstantX(line):
+   return f"""
+       @{pshreg.search(line).group(3)}
+       D=A
+       @SP
+       A=M
+       M=D
+       @SP
+       M=M+1"""
+
+def add(line):
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=D+M""" #the topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+
+def sub(line):
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=M-D""" #topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+
+def neg(line):
+   return """
+           @SP
+           D=A
+           A=M-1
+           M=D-M"""
+
+def eq(line,num):
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=D-M
+           D=1
+           M=D&M
+           D=M
+           @eqtrue{num}
+           D;JEQ
+           @eqfalse{num}
+           D;JGT
+           (eqtrue{num})
+           D=M-1
+           @eqend{num}
+           0;JMP
+           (eqfalse{num})
+           D=0
+           @eqend{num}
+           0;JMP
+           (eqend{num})
+           @SP
+           A=M-1
+           M=D"""
+   # If '&' returns '1', want eq to be false and/or == 0, otherwise true and/or ==1
+
+def gt(line,num):
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=M-D
+           D=M
+           @gttrue{num}
+           D;JGT
+           @gtfalse{num}
+           D;JLE
+           (gttrue{num})
+           D=1
+           @gtend{num}
+           0;JMP
+           (gtfalse{num})
+           D=0
+           @gtend{num}
+           0;JMP
+           (gtend{num})
+           @SP
+           A=M-1
+           M=D"""
+
+def lt(line,num):
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=M-D
+           D=M
+           @lttrue{num}
+           D;JLT
+           @ltfalse{num}
+           D;JGE
+           (lttrue{num})
+           D=1
+           @ltend{num}
+           0;JMP
+           (ltfalse{num})
+           D=0
+           @ltend{num}
+           0;JMP
+           (ltend{num})
+           @SP
+           A=M-1
+           M=D"""
+
+def andfunc(line,num):
+   return """
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=D&M"""
+
+def orfunc(line,num):
+   return """
+           @SP
+           AM=M-1
+           D=M
+           A=A-1
+           M=D|M"""
+
+def notfunc(line):
+   return """
+           @SP
+           A=M-1
+           M=!M"""
+
+#Flow control commands
+def writeInit(line):
+   return """
+           @256
+           D=A
+           @SP
+           M=D
+           @Sys.init
+           0;JMP"""
+
+def writeLabel(line):
+   logging.warning(str(f'{label(line)}${labelreg.search(line).group(2)}'))
+   return f'\n({label(line)}${labelreg.search(line).group(2)})'
+
+def writeGoto(line):
+   return f"""
+           @{label(line)}${gotoreg.search(line).group(2)}
+           0;JMP"""
+
+def writeIf(line):
+   #@{gotoreg.search(line).group(2)}
+   return f"""
+           @SP
+           AM=M-1
+           D=M
+           @{label(line)}${gotoreg.search(line).group(2)}
+           D;JNE"""
+
+def writeCall(line,count):
+   return f"""
+           @returnaddress{count}
+           D=A
+           @SP
+           A=M
+           M=D
+           @SP
+           M=M+1
+           @LCL
+           D=M
+           @SP
+           A=M
+           M=D
+           @SP
+           M=M+1
+           @ARG
+           D=M
+           @SP
+           A=M
+           M=D
+           @SP
+           M=M+1
+           @THIS
+           D=M
+           @SP
+           A=M
+           M=D
+           @SP
+           M=M+1
+           @THAT
+           D=M
+           @SP
+           A=M
+           M=D
+           @SP
+           M=M+1
+           D=M
+           @ARG
+           M=D
+           @{callreg.search(line).group(3)}
+           D=A
+           @ARG
+           M=M-D
+           @5
+           D=A
+           @ARG
+           M=M-D
+           @SP
+           D=M
+           @LCL
+           M=D
+           @{callreg.search(line).group(2)}
+           0;JMP
+           (returnaddress{count})"""
+
+def writeReturn(line):
+   return f"""
+           @LCL
+           D=M
+           @10
+           M=D
+           @5
+           D=A
+           @LCL
+           A=M-D
+           D=M
+           @9
+           M=D
+           @SP
+           AM=M-1
+           D=M
+           @ARG
+           A=M
+           M=D
+           @ARG
+           D=M
+           @SP
+           M=D+1
+           @LCL
+           A=M-1
+           D=M
+           @THAT
+           M=D
+           @2
+           D=A
+           @LCL
+           A=M-D
+           D=M
+           @THIS
+           M=D
+           @3
+           D=A
+           @LCL
+           A=M-D
+           D=M
+           @ARG
+           M=D
+           @4
+           D=A
+           @10
+           A=M-D
+           D=M
+           @LCL
+           M=D
+           @9
+           A=M
+           0;JMP"""
+
+def writeFunction(line):
+   writer.write(f'\n({funcreg.search(line).group(2)})\n')
+   logging.critical(str(funcreg.search(line).group()))
+   for _ in range(int(funcreg.search(line).group(3))):
+       writer.write(textwrap.dedent("""
+       @SP
+       M=M+1
+       A=M-1
+       M=0"""))
+#Memory access commands
+
+def LCL(line):
+   if 'push' in line and '0' in line:
+       return f"""
+               @LCL
+               A=M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'push' in line:
+       return f"""
+               @{pshreg.search(line).group(3)}
+               D=A
+               @LCL
+               A=D+M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop' in line and '0' in line:
+       return f"""
+               @SP
+               A=M-1
+               D=M
+               @LCL
+               A=M
+               M=D
+               @SP
+               M=M-1"""
+   else:
+       return f"""
+               @{popreg.search(line).group(3)}
+               D=A
+               @LCL
+               M=D+M
+               @SP
+               A=M-1
+               D=M
+               @LCL
+               A=M
+               M=D
+               @300
+               D=A
+               @LCL
+               M=D
+               @SP
+               M=M-1"""
+
+def ARG(line):
+   if 'push' in line and '0' in line:
+       return """
+               @ARG
+               A=M
+               D=M
+               @SP
+               M=M+1
+               A=M-1
+               M=D"""
+   elif 'push' in line:
+       return f"""
+               @{pshreg.search(line).group(3)}
+               D=A
+               @ARG
+               A=D+M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop' in line and '0' in line:
+       return f"""
+               @SP
+               A=M-1
+               D=M
+               @ARG
+               A=M
+               M=D
+               @SP
+               M=M-1"""
+   else:
+       return f"""
+               @{popreg.search(line).group(3)}
+               D=A
+               @ARG
+               M=D+M
+               @SP
+               A=M-1
+               D=M
+               @ARG
+               A=M
+               M=D
+               @400
+               D=A
+               @ARG
+               M=D
+               @SP
+               M=M-1"""
+
+def THIS(line):
+   if 'push' in line and '0' in line:
+       return """
+               @THIS
+               A=M
+               D=M
+               @SP
+               M=D"""
+   elif 'push' in line:
+       return f"""
+               @{pshreg.search(line).group(3)}
+               D=A
+               @THIS
+               A=D+M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop' in line and '0' in line:
+       return """
+               @SP
+               A=M-1
+               D=M
+               @THIS
+               A=M
+               M=D
+               @SP
+               M=M-1"""
+   else:
+       return f"""
+               @{popreg.search(line).group(3)}
+               D=A
+               @THIS
+               M=D+M
+               @SP
+               A=M-1
+               D=M
+               @THIS
+               A=M
+               M=D
+               @3000
+               D=A
+               @THIS
+               M=D
+               @SP
+               M=M-1"""
+
+def THAT(line):
+   if 'push' in line and '0' in line:
+       return """
+               @THAT
+               A=M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'push' in line:
+       return f"""
+               @{pshreg.search(line).group(3)}
+               D=A
+               @THAT
+               A=D+M
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop' in line and '0' in line:
+       return f"""
+               @SP
+               A=M-1
+               D=M
+               @THAT
+               A=M
+               M=D
+               @SP
+               M=M-1"""
+   else:
+       return f"""
+               @SP
+               AM=M-1
+               D=M
+               @300{popreg.search(line).group(3)}
+               M=D"""
+
+def pointer(line):
+   if 'push' in line and pshreg.search(line).group(3) == '0':
+       return """
+               @THIS
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'push' in line and pshreg.search(line).group(3) == '1':
+       return """
+               @THAT
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop pointer 0' in line and popreg.search(line).group(3) == '0':
+       return """
+               @SP
+               AM=M-1
+               D=M
+               @THIS
+               M=D"""
+   elif 'pop pointer 1' in line:
+       return """
+               @SP
+               AM=M-1
+               D=M
+               @THAT
+               M=D"""
+
+def static(line,count):
+   number = count
+   logging.critical(f'Count is: {count}')
+   classchar = 0
+   for _ in range(count):
+      if classreg.search(hold[number]) != None:
+         classchar = chr(64 + int(classreg.search(hold[number]).group(2)))
+         logging.critical(f'classchar value is: {classchar}')
+         break
+      else:
+         number -= 1
+   if 'push' in line:
+       return f"""
+               @Xxx.{pshreg.search(line).group(3) + classchar}
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   elif 'pop' in line:
+       return f"""
+               @SP
+               AM=M-1
+               D=M
+               @Xxx.{popreg.search(line).group(3) + classchar}
+               M=D"""
+
+def temp(line):
+   if 'push' in line:
+       return f"""
+               @{5 + int(pshreg.search(line).group(3))}
+               D=M
+               @SP
+               A=M
+               M=D
+               @SP
+               M=M+1"""
+   else:
+       return f"""
+               @SP
+               AM=M-1
+               D=M
+               @{5 + int(popreg.search(line).group(3))}
+               M=D"""
+
+countgt = 1
+countlt = 1
+counteq = 1
+countor = 1
+countand = 1
+countcall = 1
+linecount = -1
+
+writer = open('StaticTest1.asm', 'a')
+writer.write(textwrap.dedent(writeInit('')))
+
+for line in hold:
+   if '//' not in line[0:2]:
+       linecount += 1
+       if "this" in line:
+           writer.write(textwrap.dedent(THIS(line)))
+       elif "that" in cmntreg.search(line).group():
+           writer.write(textwrap.dedent(THAT(line)))
+       elif "pointer" in cmntreg.search(line).group():
+           writer.write(textwrap.dedent(pointer(line)))
+       elif "static" in line:
+           writer.write(textwrap.dedent(static(line,linecount)))
+       elif "argument" in line:
+           writer.write(textwrap.dedent(ARG(line)))
+       elif "constant" in line:
+           writer.write(textwrap.dedent(pushConstantX(line)))
+       elif "local" in line:
+           writer.write(textwrap.dedent(LCL(line)))
+       elif "temp" in line:
+           writer.write(textwrap.dedent(temp(line)))
+       elif "add" in line:
+           writer.write(textwrap.dedent(add(line)))
+       elif "sub" in line:
+           writer.write(textwrap.dedent(sub(line)))
+       elif "gt" in line:
+           writer.write(textwrap.dedent(gt(line)))
+           countgt += 1
+       elif "lt" in line:
+           writer.write(textwrap.dedent(lt(line,countlt)))
+           countlt += 1
+       elif "eq" in line:
+           writer.write(textwrap.dedent(eq(line)))
+           counteq += 1
+       elif "neg" in line:
+           writer.write(textwrap.dedent(neg(line)))
+       elif "or" in line:
+           writer.write(textwrap.dedent(orfunc(line)))
+           countor += 1
+       elif "not" in line:
+           writer.write(textwrap.dedent(notfunc(line)))
+       elif "and" in line:
+           writer.write(textwrap.dedent(andfunc(line)))
+           countand += 1
+       elif "label" in line:
+           writer.write(textwrap.dedent(writeLabel(line)))
+       elif "call" in line:
+           writer.write(textwrap.dedent(writeCall(line,countcall)))
+           countcall +=1
+       elif "function" in line:
+           writeFunction(line)
+       elif "if-goto" in line:
+           writer.write(textwrap.dedent(writeIf(line)))
+       elif "goto" in line:
+           writer.write(textwrap.dedent(writeGoto(line)))
+       elif "return" in line:
+           writer.write(textwrap.dedent(writeReturn(line)))
+   else:
+       continue
+writer.close()

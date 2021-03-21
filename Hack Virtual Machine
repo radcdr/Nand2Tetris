@@ -4,10 +4,9 @@
 import logging
 import sys
 import re
-import assembler
 import textwrap
-
 from pathlib import Path
+
 
 logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(levelname)s - %(message)s')
 logging.debug('Start of program')
@@ -15,19 +14,27 @@ logging.debug('Start of program')
 #PARSER:
 vmcode = open(Path(f'/Users/baylorstudent/Documents/') / 'StaticTest1.vm')
 hold = vmcode.readlines()
-cmnd = 0
+
+
 pshreg = re.compile(r'(push)\s(constant|local|argument|this|that|pointer|static|temp)\s(\d+)')
+
 popreg = re.compile(r'(pop)\s(constant|local|argument|this|that|pointer|static|temp)\s(\d+)')
+
 funcreg = re.compile(r'(function)\s(\S+)\s*(\S+)*')
+
 callreg = re.compile(r'(call)\s(\S+)\s*(\S+)*')
+
 labelreg = re.compile(r'(label)\s(.+)')
+
 cmntreg = re.compile(r'[^/]+')
+
 commandTypereg = re.compile(r'(sub|neg|eq|gt|lt|and|or|not|push|pop|label|goto|if|function|return|call)')
+
 classreg = re.compile(r'(Class)(\d+)(\.get|\.set)')
+
 
 def label(lbl):
    counter = 0
-   #logging.debug(len(hold))
    logging.debug(lbl)
    for line in hold:
        if lbl == line:
@@ -42,6 +49,8 @@ def label(lbl):
        else:
            counter -= 1
            continue
+
+         
 gotoreg = re.compile(r'(goto|if-goto)\s(.+)')
 
 #CODE WRITER
@@ -56,13 +65,15 @@ def pushConstantX(line):
        @SP
        M=M+1"""
 
+
 def add(line):
    return f"""
            @SP
            AM=M-1
            D=M
            A=A-1
-           M=D+M""" #the topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+           M=D+M"""  #the topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+
 
 def sub(line):
    return f"""
@@ -70,7 +81,8 @@ def sub(line):
            AM=M-1
            D=M
            A=A-1
-           M=M-D""" #topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+           M=M-D"""  #topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+
 
 def neg(line):
    return """
@@ -79,7 +91,8 @@ def neg(line):
            A=M-1
            M=D-M"""
 
-def eq(line,num):
+
+def eq(line, num):
    return f"""
            @SP
            AM=M-1
@@ -105,9 +118,10 @@ def eq(line,num):
            @SP
            A=M-1
            M=D"""
-   # If '&' returns '1', want eq to be false and/or == 0, otherwise true and/or ==1
+   # If '&' returns '1', want eq to be false and/or == 0, otherwise true and/or == 1
 
-def gt(line,num):
+
+def gt(line, num):
    return f"""
            @SP
            AM=M-1
@@ -132,7 +146,8 @@ def gt(line,num):
            A=M-1
            M=D"""
 
-def lt(line,num):
+
+def lt(line, num):
    return f"""
            @SP
            AM=M-1
@@ -157,7 +172,8 @@ def lt(line,num):
            A=M-1
            M=D"""
 
-def andfunc(line,num):
+
+def andfunc(line, num):
    return """
            @SP
            AM=M-1
@@ -165,13 +181,15 @@ def andfunc(line,num):
            A=A-1
            M=D&M"""
 
-def orfunc(line,num):
+
+def orfunc(line, num):
    return """
            @SP
            AM=M-1
            D=M
            A=A-1
            M=D|M"""
+
 
 def notfunc(line):
    return """
@@ -189,14 +207,17 @@ def writeInit(line):
            @Sys.init
            0;JMP"""
 
+
 def writeLabel(line):
    logging.warning(str(f'{label(line)}${labelreg.search(line).group(2)}'))
    return f'\n({label(line)}${labelreg.search(line).group(2)})'
+
 
 def writeGoto(line):
    return f"""
            @{label(line)}${gotoreg.search(line).group(2)}
            0;JMP"""
+
 
 def writeIf(line):
    #@{gotoreg.search(line).group(2)}
@@ -207,7 +228,8 @@ def writeIf(line):
            @{label(line)}${gotoreg.search(line).group(2)}
            D;JNE"""
 
-def writeCall(line,count):
+
+def writeCall(line, count):
    return f"""
            @returnaddress{count}
            D=A
@@ -263,6 +285,7 @@ def writeCall(line,count):
            0;JMP
            (returnaddress{count})"""
 
+
 def writeReturn(line):
    return f"""
            @LCL
@@ -315,6 +338,7 @@ def writeReturn(line):
            @9
            A=M
            0;JMP"""
+
 
 def writeFunction(line):
    writer.write(f'\n({funcreg.search(line).group(2)})\n')
@@ -379,6 +403,7 @@ def LCL(line):
                @SP
                M=M-1"""
 
+
 def ARG(line):
    if 'push' in line and '0' in line:
        return """
@@ -430,6 +455,7 @@ def ARG(line):
                @SP
                M=M-1"""
 
+
 def THIS(line):
    if 'push' in line and '0' in line:
        return """
@@ -479,6 +505,7 @@ def THIS(line):
                @SP
                M=M-1"""
 
+
 def THAT(line):
    if 'push' in line and '0' in line:
        return """
@@ -520,6 +547,7 @@ def THAT(line):
                @300{popreg.search(line).group(3)}
                M=D"""
 
+
 def pointer(line):
    if 'push' in line and pshreg.search(line).group(3) == '0':
        return """
@@ -554,7 +582,8 @@ def pointer(line):
                @THAT
                M=D"""
 
-def static(line,count):
+
+def static(line, count):
    number = count
    logging.critical(f'Count is: {count}')
    classchar = 0
@@ -601,11 +630,17 @@ def temp(line):
                M=D"""
 
 countgt = 1
+
 countlt = 1
+
 counteq = 1
+
 countor = 1
+
 countand = 1
+
 countcall = 1
+
 linecount = -1
 
 writer = open('StaticTest1.asm', 'a')
@@ -621,7 +656,7 @@ for line in hold:
        elif "pointer" in cmntreg.search(line).group():
            writer.write(textwrap.dedent(pointer(line)))
        elif "static" in line:
-           writer.write(textwrap.dedent(static(line,linecount)))
+           writer.write(textwrap.dedent(static(line, linecount)))
        elif "argument" in line:
            writer.write(textwrap.dedent(ARG(line)))
        elif "constant" in line:
@@ -638,7 +673,7 @@ for line in hold:
            writer.write(textwrap.dedent(gt(line)))
            countgt += 1
        elif "lt" in line:
-           writer.write(textwrap.dedent(lt(line,countlt)))
+           writer.write(textwrap.dedent(lt(line, countlt)))
            countlt += 1
        elif "eq" in line:
            writer.write(textwrap.dedent(eq(line)))
@@ -656,7 +691,7 @@ for line in hold:
        elif "label" in line:
            writer.write(textwrap.dedent(writeLabel(line)))
        elif "call" in line:
-           writer.write(textwrap.dedent(writeCall(line,countcall)))
+           writer.write(textwrap.dedent(writeCall(line, countcall)))
            countcall +=1
        elif "function" in line:
            writeFunction(line)
@@ -668,4 +703,5 @@ for line in hold:
            writer.write(textwrap.dedent(writeReturn(line)))
    else:
        continue
+
 writer.close()

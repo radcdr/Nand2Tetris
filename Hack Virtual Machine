@@ -1,6 +1,7 @@
 #! python3
 # HackVirtualMachine.py - Converts vm files to asm
 
+import cProfile
 import logging
 import sys
 import re
@@ -72,7 +73,7 @@ def add(line):
            AM=M-1
            D=M
            A=A-1
-           M=D+M"""  #the topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+           M=D+M"""  # the topOfStack value is eliminated and the penultimate part of the stack is replaced with the result of the arithmetical function
 
 
 def sub(line):
@@ -81,7 +82,7 @@ def sub(line):
            AM=M-1
            D=M
            A=A-1
-           M=M-D"""  #topOfStack value is eliminated and the pentultimate part of the stack is repalced with the result of the arithemtical function
+           M=M-D"""  # topOfStack value is eliminated and the penultimate part of the stack is replaced with the result of the arithmetical function
 
 
 def neg(line):
